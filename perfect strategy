@@ -47,7 +47,7 @@ for date in dates:
     risk_adjusted_score = y_pred / volatility
     
     # スコア上位4銘柄（リスク調整済）を仮に取得
-    top_assets_all = risk_adjusted_score.nlargest(5)
+    top_assets_all = risk_adjusted_score.nlargest(6)
     
     # そのうち、予測リターン（y_pred）が0より大きいものだけに限定
     past_12m_return = prices.pct_change(12).loc[date]
