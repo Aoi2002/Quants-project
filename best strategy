@@ -1,0 +1,110 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+
+# 銘柄リスト
+tickers = ["XLK", "XLY", "XLP", "XLU", "XLF", "XLE", "XLB", "XBI", "IWD", "IWF", "VNQ", "EFA", "EEM", "IEF", "LQD", "GLD"]
+
+# データ取得と前処理
+prices = yf.download(tickers, start="2005-01-01", auto_adjust=True)["Close"]
+prices = prices.resample("ME").last()
+returns = prices.pct_change().dropna()
+
+# 特徴量作成
+def create_features(prices):
+    features = pd.DataFrame(index=prices.index)
+    for ticker in prices.columns:
+        features[f"{ticker}_mom"] = prices[ticker].pct_change(12) - prices[ticker].pct_change(1)
+        features[f"{ticker}_vol"] = prices[ticker].pct_change().rolling(12).std()
+        features[f"{ticker}_resid"] = prices[ticker] - prices[ticker].rolling(12).mean()
+    return features.dropna()
+
+features = create_features(prices)
+target = returns.shift(-1)
+
+# 初期化
+strategy_returns = []
+net_returns = []
+dates_out = []
+prev_weights = None
+turnovers = []
+transaction_cost_rate = 0.001  # 取引コスト（0.1%）
+
+dates = features.index[60:-1]
+for date in dates:
+    X_train = features.loc[:date].iloc[-60:]
+    y_train = target.loc[:date].iloc[-60:]
+    X_pred = features.loc[[date - pd.offsets.MonthEnd(1)]]
+    
+    model = RandomForestRegressor(n_estimators=100, random_state=0)
+    model.fit(X_train, y_train)
+    y_pred = pd.Series(model.predict(X_pred)[0], index=returns.columns)
+
+    # 各銘柄の予測スコアと直近12ヶ月の標準偏差
+    volatility = returns.rolling(12).std().loc[date]
+    risk_adjusted_score = y_pred / volatility
+    
+    # スコア上位4銘柄（リスク調整済）を仮に取得
+    top_assets_all = risk_adjusted_score.nlargest(6)
+    
+    # そのうち、予測リターン（y_pred）が0より大きいものだけに限定
+    past_12m_return = prices.pct_change(12).loc[date]
+    filtered_assets = top_assets_all[top_assets_all.index.map(lambda x: (y_pred[x] > 0) and (past_12m_return[x] > 0))]
+
+    # 万が一、1銘柄も条件を満たさなかった場合は全キャッシュ（リターン0）
+    if filtered_assets.empty:
+      weights = pd.Series(0, index=returns.columns)  # 全銘柄にゼロ配分
+    else:
+      weights = filtered_assets / filtered_assets.sum()
+
+    next_date = date + pd.offsets.MonthEnd(1)
+
+    if prev_weights is not None:
+        aligned_weights = weights.reindex(prev_weights.index).fillna(0)
+        turnover = (aligned_weights - prev_weights).abs().sum()
+    else:
+        turnover = weights.abs().sum()
+    turnovers.append(turnover)
+    prev_weights = weights.copy()
+
+    gross_ret = (returns.loc[next_date, weights.index] * weights).sum()
+    cost = turnover * transaction_cost_rate
+    net_ret = gross_ret - cost
+
+    strategy_returns.append(gross_ret)
+    net_returns.append(net_ret)
+    dates_out.append(next_date)
+
+strategy_returns = pd.Series(strategy_returns, index=dates_out)
+net_returns = pd.Series(net_returns, index=dates_out)
+
+# ケリー倍率計算と適用（フラクショナルケリー）
+m = strategy_returns.mean()
+s2 = strategy_returns.var()
+kelly_leverage = m / s2
+f_adjusted = kelly_leverage * 0.2
+# 安全係数を考慮
+
+kelly_returns = net_returns * f_adjusted
+kelly_cum = (1 + kelly_returns).cumprod()
+net_cum = (1 + net_returns).cumprod()
+gross_cum = (1 + strategy_returns).cumprod()
+
+# ベンチマーク（S&P500）
+spy = yf.download("SPY", start="2005-01-01", auto_adjust=True)["Close"]
+spy = spy.resample("ME").last()
+spy_returns = spy.pct_change().dropna().reindex(strategy_returns.index)
+spy_cum = (1 + spy_returns.dropna()).cumprod()
+
+# グラフ描画
+plt.figure(figsize=(20, 8))
+plt.plot(spy_cum, label="S&P500")
+plt.plot(kelly_cum, label=f"Strategy (Kelly x {f_adjusted:.2f})")
+plt.yscale("log")
+plt.title("ML Momentum Strategy: Gross, Net, and Kelly Adjusted vs SPY")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
