@@ -34,14 +34,16 @@ Practical: Monthly rebalance, realistic costs, turnover penalty
 Modular: All logic separated into reusable functions/modules
 Expandable: Ready for model upgrades (e.g. XGBoost, LightGBM, LSTM), new signals, and out-of-sample testing
 
-###🔧 Limitations & Future Work
-No walk-forward cross-validation or out-of-sample test (yet)
+## 📈 Backtest Result
 
-No macro/multi-factor signals currently integrated
+The following chart compares the cumulative returns of:
 
-Model = RandomForest only; possible upgrade to ML ensemble or DNN
+- Machine Learning Momentum Strategy (with fractional Kelly scaling)
+- S&P500 benchmark (SPY)
+- Equal-weighted Buy & Hold portfolio
 
-No regime-switching or β-neutral logic — future addition possible
+![Performance Chart](results/performance_chart.png)
+
 
 ## 📚 References & Inspirations
 
