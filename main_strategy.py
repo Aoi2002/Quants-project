@@ -117,7 +117,8 @@ plt.title("ML Momentum Strategy vs S&P500 vs Equal Weight Buy & Hold")
 plt.legend(loc="upper left", fontsize=10)
 plt.grid(True)
 plt.tight_layout()
-plt.show()
+plt.savefig("results/performance_chart.png")
+plt.close()
 
 # ===== 9. PERFORMANCE METRICS =====
 def evaluate_strategy(cum_returns, monthly_returns, name):
